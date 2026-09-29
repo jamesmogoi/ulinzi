@@ -53,8 +53,8 @@ npm run verify   # lint, typecheck, tests, production build
 
 1. Push to GitHub and import the repo in [Vercel](https://vercel.com/new).
 2. In the Vercel project, add **Neon** from Storage / Marketplace (free plan). It sets `DATABASE_URL`.
-3. Add `GROQ_API_KEY` and `SESSION_SECRET` under Environment Variables.
-4. Create the tables once: `vercel env pull .env.local && npm run db:migrate`.
+3. Add `GROQ_API_KEY` and `SESSION_SECRET` under Environment Variables, then redeploy.
+4. The tables create themselves: `vercel-build` runs `db/schema.sql` before every build, and the schema is idempotent.
 5. Every push gets a preview URL. Share that with testers.
 
 ## Data and privacy

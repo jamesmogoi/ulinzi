@@ -1,10 +1,16 @@
 // Applies db/schema.sql to DATABASE_URL, one statement at a time (Neon's
-// HTTP driver runs a single statement per query).
+// HTTP driver runs a single statement per query). Runs on every Vercel
+// build via `vercel-build`; the schema is idempotent, so that is safe.
+// --if-configured skips quietly when no database is set (CI, fresh clones).
 import { readFile } from "node:fs/promises";
 import { neon } from "@neondatabase/serverless";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
+  if (process.argv.includes("--if-configured")) {
+    console.log("DATABASE_URL not set; skipping migration.");
+    process.exit(0);
+  }
   console.error("DATABASE_URL is not set. Put it in .env.local or the environment.");
   process.exit(1);
 }
