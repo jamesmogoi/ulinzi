@@ -237,7 +237,7 @@ export function Game({ initialUnlocked }: { initialUnlocked: number }) {
             James Mogoi
           </a>{" "}
           ·{" "}
-          <a className="underline underline-offset-2 hover:text-ink" href="https://github.com/jamesmogoi/mlinzi">
+          <a className="underline underline-offset-2 hover:text-ink" href="https://github.com/jamesmogoi/ulinzi">
             How it works
           </a>
         </p>
