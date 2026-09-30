@@ -1,7 +1,7 @@
 /*
   An anonymous player session in a signed cookie: a random id for the
-  research log and the highest level unlocked. No account, no personal
-  data. The signature stops a player from editing the cookie to skip
+  research log, the highest level unlocked, and whether the game is won.
+  No account, no personal data. The signature stops a player from editing the cookie to skip
   levels; everything a level needs to check happens server-side.
 */
 
@@ -15,12 +15,14 @@ const SessionSchema = z.object({
   v: z.literal(1),
   sid: z.uuid(),
   unlocked: z.number().int().min(1).max(MAX_LEVEL),
+  // Added after launch, so cookies from before it read as not finished.
+  finished: z.boolean().default(false),
 });
 
 export type Session = z.infer<typeof SessionSchema>;
 
 export function newSession(): Session {
-  return { v: 1, sid: crypto.randomUUID(), unlocked: 1 };
+  return { v: 1, sid: crypto.randomUUID(), unlocked: 1, finished: false };
 }
 
 export async function encodeSession(session: Session, secret: string): Promise<string> {

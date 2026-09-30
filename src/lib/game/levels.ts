@@ -35,8 +35,7 @@ export const LEVELS: readonly Level[] = [
     id: 2,
     name: "Mlinzi Makini",
     english: "The careful guard",
-    defense:
-      "Detailed rules in English. Nobody can approve a payment in chat, and every message is treated as untrusted.",
+    defense: "The same rule, plus one warning: scammers pretend to be the shop owner.",
     guardMode: "shadow",
     enforcement: "model",
   },
@@ -45,7 +44,7 @@ export const LEVELS: readonly Level[] = [
     name: "Mlinzi wa Mtaa",
     english: "The street-smart guard",
     defense:
-      "The same rules, plus the scams Kenyans know by heart: wrong-number reversals, fake customer care, the boss on a call. In Swahili and Sheng.",
+      "The warning, plus the scams Kenyans know by heart: wrong-number reversals, fake customer care, the boss on a call, in Swahili and Sheng.",
     guardMode: "shadow",
     enforcement: "model",
   },
@@ -63,7 +62,7 @@ export const LEVELS: readonly Level[] = [
     name: "Mlinzi wa Chuma",
     english: "The iron guard",
     defense:
-      "The till itself checks every payment against the approved list. Convincing Mlinzi is no longer enough.",
+      "The till itself checks every payment against the approved list, so no money can move. Fool Mlinzi into trying anyway to finish the game.",
     guardMode: "block",
     enforcement: "code",
   },

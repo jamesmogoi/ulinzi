@@ -25,10 +25,16 @@ CREATE INDEX IF NOT EXISTS attempts_level_outcome ON attempts (level, outcome);
 
 CREATE INDEX IF NOT EXISTS attempts_created_at ON attempts (created_at);
 
--- Fixed-window counters for per-IP and global limits.
+-- "Delete my messages" deletes by session.
+CREATE INDEX IF NOT EXISTS attempts_session_id ON attempts (session_id);
+
+-- Fixed-window counters for the per-player, per-network and daily limits.
 CREATE TABLE IF NOT EXISTS rate_counters (
   key          text        NOT NULL,
   window_start timestamptz NOT NULL,
   count        integer     NOT NULL,
   PRIMARY KEY (key, window_start)
 );
+
+-- The daily clean-up deletes counters by age.
+CREATE INDEX IF NOT EXISTS rate_counters_window_start ON rate_counters (window_start);

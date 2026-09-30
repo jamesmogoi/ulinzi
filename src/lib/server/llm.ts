@@ -7,7 +7,12 @@ import { type Fetch, GroqError, groqChat } from "./groq";
   One model call per attempt, with tools. Models are tried in order and a
   rate-limited or failing model hands over to the next; whichever answered
   is recorded on the attempt, so the analysis never mixes them up.
+
+  The route has 30 seconds: 5 for the guard and 10 for each of two models
+  leaves room for the database. Groq usually answers in under a second.
 */
+
+const MODEL_TIMEOUT_MS = 10_000;
 
 const Completion = z.object({
   choices: z
@@ -82,6 +87,7 @@ export async function chatWithTools(request: ChatRequest): Promise<ChatResult> {
           temperature: 0.6,
         },
         request.fetchImpl,
+        MODEL_TIMEOUT_MS,
       );
       const completion = Completion.parse(raw);
       const { message } = completion.choices[0];

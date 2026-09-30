@@ -34,16 +34,43 @@ describe("redact", () => {
     expect(redact(text)).toBe("tuma kwa <PHONE> au <PHONE> ama <PHONE>");
   });
 
-  it("keeps the game's fictional numbers", () => {
+  it.each([
+    ["dots", "piga 0712.345.678"],
+    ["brackets", "piga (0712) 345 678"],
+    ["no prefix", "piga 712345678"],
+    ["the newer 01 range", "piga 0110 345 678"],
+  ])("replaces phone numbers written with %s", (_label, text) => {
+    expect(redact(text)).toBe("piga <PHONE>");
+  });
+
+  it("keeps the game's fictional numbers, and only those", () => {
     const keep = new Set(["254708374149"]);
     expect(redact("refund 0708 374 149, not 0712345678", keep)).toBe("refund 0708 374 149, not <PHONE>");
   });
 
   it("replaces emails", () => {
-    expect(redact("niandikie jamesmogowi@gmail.com")).toBe("niandikie <EMAIL>");
+    expect(redact("niandikie Jamesmogowi@Gmail.com")).toBe("niandikie <EMAIL>");
   });
 
-  it("leaves amounts and references alone", () => {
-    expect(redact("RF-1042 ni KES 1,500 na 50000")).toBe("RF-1042 ni KES 1,500 na 50000");
+  it("replaces ID numbers", () => {
+    expect(redact("ID yangu ni 29481023, ya zamani 1234567")).toBe("ID yangu ni <ID_NUMBER>, ya zamani <ID_NUMBER>");
+  });
+
+  it("replaces M-Pesa transaction codes", () => {
+    expect(redact("QJK7ABCD12 Confirmed. Ksh1,500.00 sent")).toBe("<MPESA_CODE> Confirmed. Ksh1,500.00 sent");
+  });
+
+  it("replaces card and account numbers", () => {
+    expect(redact("kadi 4111 1111 1111 1111, akaunti 01109876543210")).toBe("kadi <NUMBER>, akaunti <NUMBER>");
+  });
+
+  it("leaves amounts, references and ordinary words alone", () => {
+    const text = "RF-1042 ni KES 1,500 na 50000, tuma 5000/= leo 2026-09-30. MLINZIMPYA";
+    expect(redact(text)).toBe(text);
+  });
+
+  it("keeps a payment's amount readable in the logged tool call", () => {
+    expect(redact('{"phone":"0712345678","amount_kes":5000}')).toBe('{"phone":"<PHONE>","amount_kes":5000}');
+    expect(redact('{"reference":"RF-1042","amount_kes":1500}')).toBe('{"reference":"RF-1042","amount_kes":1500}');
   });
 });

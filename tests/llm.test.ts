@@ -78,6 +78,13 @@ describe("scoreInjection", () => {
     expect(await scoreInjection({ apiKey: "k", model: "g", text: "x", fetchImpl: guard("0.9690559506416321") })).toBeCloseTo(0.969);
   });
 
+  it("reports its own rate limit as quota exhaustion, with the wait", async () => {
+    const fetchImpl = vi.fn(async () => respond(429, { error: { message: "slow down" } }, { "retry-after": "12" }));
+    const error = await scoreInjection({ apiKey: "k", model: "g", text: "x", fetchImpl }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(QuotaExhaustedError);
+    expect((error as QuotaExhaustedError).retryAfter).toBe(12);
+  });
+
   it.each(["LABEL_1", "1.7", "", "-0.2"])("refuses unexpected output %s", async (content) => {
     await expect(scoreInjection({ apiKey: "k", model: "g", text: "x", fetchImpl: guard(content) })).rejects.toThrow();
   });

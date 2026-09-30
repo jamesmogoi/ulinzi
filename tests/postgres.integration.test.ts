@@ -36,6 +36,13 @@ describe.skipIf(!url)("postgres store", () => {
     expect(await store.hit(KEY, 3600, now)).toBe(2);
   });
 
+  it("reads a count without adding to it", async () => {
+    const now = new Date();
+    const before = await store.count(KEY, 60, now);
+    await store.hit(KEY, 60, now);
+    expect(await store.count(KEY, 60, now)).toBe(before + 1);
+  });
+
   it("records an attempt and counts it in the stats", async () => {
     const before = await store.stats();
     await store.recordAttempt({
@@ -63,5 +70,16 @@ describe.skipIf(!url)("postgres store", () => {
     const [row] = await sql`SELECT tool_calls, guard_mode FROM attempts WHERE session_id = ${SESSION}`;
     expect(row.guard_mode).toBe("block");
     expect(row.tool_calls[0].name).toBe("send_money");
+  });
+
+  it("forgets a session's attempts", async () => {
+    expect(await store.forget(SESSION)).toBeGreaterThan(0);
+    expect(await store.forget(SESSION)).toBe(0);
+  });
+
+  it("prunes without touching anything recent", async () => {
+    const before = await store.stats();
+    await store.prune(new Date());
+    expect((await store.stats()).attempts).toBe(before.attempts);
   });
 });

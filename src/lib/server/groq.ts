@@ -6,7 +6,6 @@ import "server-only";
 */
 
 const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const TIMEOUT_MS = 20_000;
 
 export type Fetch = typeof fetch;
 
@@ -27,6 +26,7 @@ export async function groqChat(
   apiKey: string,
   body: Record<string, unknown>,
   fetchImpl: Fetch = fetch,
+  timeoutMs = 10_000,
 ): Promise<unknown> {
   const response = await fetchImpl(ENDPOINT, {
     method: "POST",
@@ -35,7 +35,7 @@ export async function groqChat(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {

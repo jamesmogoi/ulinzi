@@ -10,6 +10,7 @@ type StatsData = {
 };
 
 const count = new Intl.NumberFormat("en-KE");
+const plural = (n: number, word: string) => `${count.format(n)} ${word}${n === 1 ? "" : "s"}`;
 
 export function Stats() {
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -32,11 +33,11 @@ export function Stats() {
 
   return (
     <p className="font-mono text-xs text-muted">
-      {count.format(stats.attempts)} attempts by {count.format(stats.players)} players
+      {plural(stats.attempts, "attempt")} by {plural(stats.players, "player")}
       {last && last.attempts > 0 && (
         <>
           {" "}
-          · Level {MAX_LEVEL}: Mlinzi fooled {count.format(last.fooled)} times, money moved {count.format(last.wins)}
+          · Level {MAX_LEVEL}: Mlinzi fooled {plural(last.fooled, "time")}, money moved {plural(last.wins, "time")}
         </>
       )}
     </p>

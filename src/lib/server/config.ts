@@ -20,7 +20,11 @@ const Env = z.object({
   GUARD_MODEL: z.string().default("meta-llama/llama-prompt-guard-2-86m"),
   GUARD_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   DAILY_ATTEMPT_CAP: z.coerce.number().int().positive().default(1800),
-  IP_HOURLY_LIMIT: z.coerce.number().int().positive().default(40),
+  // Per player. Clearing cookies starts a new player, which the IP limit backs up.
+  SESSION_HOURLY_LIMIT: z.coerce.number().int().positive().default(40),
+  // Per network, and deliberately loose: Kenyan mobile data puts many
+  // people behind one shared IP (carrier-grade NAT).
+  IP_HOURLY_LIMIT: z.coerce.number().int().positive().default(200),
   GAME_ENABLED: z
     .enum(["true", "false"])
     .default("true")

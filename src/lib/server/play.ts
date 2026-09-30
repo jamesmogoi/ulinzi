@@ -1,14 +1,14 @@
 import "server-only";
-import type { AttemptOutcome, PlayedResult, PlayResult, TransferView } from "../game/api";
+import type { AttemptOutcome, PlayedResult, PlayResult, RefusedResult, TransferView } from "../game/api";
 import { type Transfer, judge } from "../game/judge";
 import { getLevel, MAX_LEVEL } from "../game/levels";
 import { formatLocalPhone } from "../game/phone";
 import { redact } from "../game/redact";
-import { APPROVED_REFUNDS } from "../game/till";
 import type { Session } from "../session";
+import { NUMBERS_ON_FILE } from "./ledger";
 import { type ChatResult, ModelOutputError, QuotaExhaustedError } from "./llm";
 import { systemPromptFor } from "./prompts";
-import type { AttemptRecord, Store } from "./store/types";
+import { type AttemptRecord, type Store, windowStart } from "./store/types";
 
 /*
   One attempt, start to finish:
@@ -21,6 +21,7 @@ import type { AttemptRecord, Store } from "./store/types";
 export type PlayLimits = {
   guardThreshold: number;
   dailyAttemptCap: number;
+  sessionHourlyLimit: number;
   ipHourlyLimit: number;
   gameEnabled: boolean;
 };
@@ -41,20 +42,37 @@ export type PlayInput = {
   country: string | null;
 };
 
-const KEEP = new Set(APPROVED_REFUNDS.map((refund) => refund.phone));
-const BUSY_THRESHOLD_SECONDS = 120;
+const HOUR = 3_600;
+const DAY = 86_400;
+const KEEP = new Set(Object.values(NUMBERS_ON_FILE));
 
 const MESSAGES = {
   locked: "That level is still locked. Beat the one before it first.",
-  rate_limited: "Pole! Too many tries from your network this hour. Come back in a bit.",
-  busy: "Mlinzi is catching his breath. Try again in a minute.",
   sleeping: "Mlinzi amelala. Today's free AI quota is used up. Rudi kesho!",
   disabled: "Mlinzi is off duty for maintenance. Rudi baadaye.",
   unavailable: "Something went wrong reaching Mlinzi. Try again.",
 } as const;
 
-function refusal(status: keyof typeof MESSAGES): PlayResult {
-  return { status, message: MESSAGES[status] };
+function refusal(status: RefusedResult["status"], message: string): PlayResult {
+  return { status, message };
+}
+
+/** 40 -> "40 seconds", 150 -> "3 minutes". */
+export function waitFor(seconds: number): string {
+  const s = Math.max(1, Math.ceil(seconds));
+  if (s < 60) return `${s} second${s === 1 ? "" : "s"}`;
+  const m = Math.ceil(s / 60);
+  return `${m} minute${m === 1 ? "" : "s"}`;
+}
+
+/*
+  Groq's daily limits refill continuously (one request frees up about every
+  86 seconds), so a rate limit is always a short wait, never "come back
+  tomorrow". Only the game's own daily cap means that.
+*/
+function busy(retryAfter: number | null): PlayResult {
+  const when = retryAfter === null ? "a minute" : waitFor(retryAfter);
+  return refusal("busy", `Mlinzi is busy with other players. Try again in ${when}.`);
 }
 
 function describe(error: unknown): string {
@@ -69,17 +87,31 @@ function view(transfer: Transfer): TransferView {
 export async function play(input: PlayInput, deps: PlayDeps): Promise<PlayResult> {
   const now = deps.now ?? Date.now;
   const started = now();
+  const clock = new Date(started);
   const level = getLevel(input.level);
 
-  if (!deps.limits.gameEnabled) return refusal("disabled");
-  if (!level || level.id > input.session.unlocked) return refusal("locked");
+  if (!deps.limits.gameEnabled) return refusal("disabled", MESSAGES.disabled);
+  if (!level || level.id > input.session.unlocked) return refusal("locked", MESSAGES.locked);
 
-  if ((await deps.store.hit(`ip:${input.ipHash}`, 3_600)) > deps.limits.ipHourlyLimit) {
-    return refusal("rate_limited");
+  const hourLeft = (windowStart(clock, HOUR).getTime() + HOUR * 1000 - started) / 1000;
+  if ((await deps.store.hit(`session:${input.session.sid}`, HOUR, clock)) > deps.limits.sessionHourlyLimit) {
+    return refusal(
+      "rate_limited",
+      `Pole! That's ${deps.limits.sessionHourlyLimit} tries this hour. Mlinzi needs a break: come back in ${waitFor(hourLeft)}.`,
+    );
   }
-  if ((await deps.store.hit("global", 86_400)) > deps.limits.dailyAttemptCap) {
-    return refusal("sleeping");
+  if ((await deps.store.hit(`ip:${input.ipHash}`, HOUR, clock)) > deps.limits.ipHourlyLimit) {
+    return refusal("rate_limited", `Pole! Too many tries from your network this hour. Come back in ${waitFor(hourLeft)}.`);
   }
+  // The daily cap counts only attempts that reached a model, so a busy
+  // spell of retries can't use it up. Checked here, counted after.
+  if ((await deps.store.count("global", DAY, clock)) >= deps.limits.dailyAttemptCap) {
+    return refusal("sleeping", MESSAGES.sleeping);
+  }
+  const countModelCall = async () => {
+    // The first model call of each UTC day also clears out old data.
+    if ((await deps.store.hit("global", DAY, clock)) === 1) await deps.store.prune(clock);
+  };
 
   const record = (fields: Partial<AttemptRecord> & Pick<AttemptRecord, "outcome">) =>
     deps.store.recordAttempt({
@@ -100,13 +132,16 @@ export async function play(input: PlayInput, deps: PlayDeps): Promise<PlayResult
       latencyMs: now() - started,
     });
 
+  const flagged = (score: number | null) => score !== null && score >= deps.limits.guardThreshold;
   const played = (outcome: AttemptOutcome, rest: Partial<PlayedResult> = {}): PlayResult => ({
     status: "played",
     outcome,
     reply: null,
     transfers: [],
     guardScore: null,
+    guardFlagged: false,
     unlocked: input.session.unlocked,
+    finished: input.session.finished,
     ...rest,
   });
 
@@ -120,11 +155,12 @@ export async function play(input: PlayInput, deps: PlayDeps): Promise<PlayResult
       guardScore = await deps.scoreInjection(input.message);
     } catch (error) {
       await record({ outcome: "error", error: `guard: ${describe(error)}` });
-      return refusal("unavailable");
+      if (error instanceof QuotaExhaustedError) return busy(error.retryAfter);
+      return refusal("unavailable", MESSAGES.unavailable);
     }
-    if (guardScore >= deps.limits.guardThreshold) {
+    if (flagged(guardScore)) {
       await record({ outcome: "guard_blocked", guardScore });
-      return played("guard_blocked", { guardScore });
+      return played("guard_blocked", { guardScore, guardFlagged: true });
     }
   } else {
     shadowScore = deps.scoreInjection(input.message).catch(() => null);
@@ -136,23 +172,25 @@ export async function play(input: PlayInput, deps: PlayDeps): Promise<PlayResult
   } catch (error) {
     if (shadowScore) guardScore = await shadowScore;
     if (error instanceof ModelOutputError) {
+      await countModelCall();
       await record({ outcome: "garbled", guardScore, error: describe(error) });
-      return played("garbled", { guardScore });
+      return played("garbled", { guardScore, guardFlagged: flagged(guardScore) });
     }
     await record({ outcome: "error", guardScore, error: describe(error) });
-    if (error instanceof QuotaExhaustedError) {
-      const wait = error.retryAfter;
-      return refusal(wait !== null && wait <= BUSY_THRESHOLD_SECONDS ? "busy" : "sleeping");
-    }
-    return refusal("unavailable");
+    if (error instanceof QuotaExhaustedError) return busy(error.retryAfter);
+    return refusal("unavailable", MESSAGES.unavailable);
   }
   if (shadowScore) guardScore = await shadowScore;
+  await countModelCall();
 
-  const { outcome, transfers } = judge(chat.toolCalls, level.enforcement);
+  const { outcome, transfers } = judge(chat.toolCalls, level.enforcement, NUMBERS_ON_FILE);
   const unlocked =
     outcome === "transferred"
       ? Math.min(MAX_LEVEL, Math.max(input.session.unlocked, level.id + 1))
       : input.session.unlocked;
+  // The last level can't be won through the model, so fooling it anyway,
+  // and watching the till refuse, is what finishes the game.
+  const finished = input.session.finished || (level.id === MAX_LEVEL && outcome === "blocked_by_till");
 
   await record({
     outcome,
@@ -169,6 +207,8 @@ export async function play(input: PlayInput, deps: PlayDeps): Promise<PlayResult
     reply: chat.content.trim() || null,
     transfers: transfers.map(view),
     guardScore,
+    guardFlagged: flagged(guardScore),
     unlocked,
+    finished,
   });
 }

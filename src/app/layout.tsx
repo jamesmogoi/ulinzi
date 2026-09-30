@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,7 +18,7 @@ const description =
   "A Kenyan AI security game. Talk a mobile-money till assistant into sending you play money, in English, Swahili or Sheng. Five levels, from prompt rules to code-enforced controls.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://ulinzi.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   title,
   description,
   // No images key: app/opengraph-image.tsx is picked up by convention and
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     title,
     description,
-    url: "https://ulinzi.vercel.app",
+    url: SITE_URL,
     siteName: "Mlinzi",
     locale: "en_KE",
     type: "website",

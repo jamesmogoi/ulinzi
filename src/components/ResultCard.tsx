@@ -1,11 +1,32 @@
 import type { ApiResponse, TransferView } from "@/lib/game/api";
 import { MAX_LEVEL } from "@/lib/game/levels";
+import { SHOP } from "@/lib/game/till";
+import { SITE_URL } from "@/lib/site";
 
 const kes = new Intl.NumberFormat("en-KE");
 
+function recipient(transfer: TransferView): string {
+  if (transfer.phone) return transfer.phone;
+  if (transfer.onFileFor) return `the customer's number on file for ${transfer.onFileFor}`;
+  return "an invalid number";
+}
+
 function money(transfer: TransferView): string {
   const amount = transfer.amountKes === null ? "an unknown amount" : `KES ${kes.format(transfer.amountKes)}`;
-  return `${amount} to ${transfer.phone ?? "an invalid number"}`;
+  return `${amount} to ${recipient(transfer)}`;
+}
+
+/** Why the till couldn't act on the payment Mlinzi asked for. */
+function invalidReason(transfer: TransferView | undefined): string {
+  if (!transfer) return "He reached for a tool the till doesn't have.";
+  const { amountKes } = transfer;
+  if (amountKes !== null && amountKes > SHOP.floatKes) {
+    return `He asked for KES ${kes.format(amountKes)}, but the till only holds KES ${kes.format(SHOP.floatKes)}. Ask for less.`;
+  }
+  if (amountKes === null || !Number.isInteger(amountKes) || amountKes <= 0) {
+    return "The amount wasn't a whole number of shillings.";
+  }
+  return "He didn't give a Kenyan mobile number to pay.";
 }
 
 function Bubble({ text }: { text: string }) {
@@ -31,12 +52,29 @@ function Receipt({ tone, title, children }: { tone: "win" | "held" | "dog" | "pl
   );
 }
 
-function GuardNote({ score, active }: { score: number | null; active: boolean }) {
-  if (score === null || active) return null;
+/** The till's own line under a reply: words are not payments. */
+function TillLine({ text }: { text: string }) {
+  return <p className="font-mono text-xs text-muted">Till: {text}</p>;
+}
+
+const SHARE_TEXT = "Nimemdanganya Mlinzi! I fooled the AI till guard on all five levels, and the till still said no. Can you?";
+
+function ShareButton() {
+  async function share() {
+    if (navigator.share) {
+      await navigator.share({ title: "Mlinzi", text: SHARE_TEXT, url: SITE_URL }).catch(() => {});
+      return;
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${SHARE_TEXT} ${SITE_URL}`)}`, "_blank", "noopener");
+  }
   return (
-    <p className="font-mono text-xs text-muted">
-      Guard dog score {score.toFixed(2)}. It&apos;s asleep on this level; from level 4 it bites.
-    </p>
+    <button
+      type="button"
+      onClick={() => void share()}
+      className="mt-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-bg transition hover:opacity-90"
+    >
+      Share your win
+    </button>
   );
 }
 
@@ -50,19 +88,14 @@ export function ResultCard({
   onNext: () => void;
 }) {
   if (response === null) {
-    return (
-      <p className="font-mono text-sm text-muted" aria-live="polite">
-        Mlinzi is thinking…
-      </p>
-    );
+    return <p className="font-mono text-sm text-muted">Mlinzi is thinking…</p>;
   }
 
   if (response.status !== "played") {
     return <Receipt tone="plain" title={response.message} />;
   }
 
-  const { outcome, reply, transfers, guardScore } = response;
-  const guardActive = level >= 4;
+  const { outcome, reply, transfers, guardScore, guardFlagged } = response;
   const unauthorized = transfers.find((t) => t.valid && !t.authorized);
   const approved = transfers.find((t) => t.authorized);
 
@@ -86,8 +119,13 @@ export function ResultCard({
       )}
 
       {outcome === "blocked_by_till" && unauthorized && (
-        <Receipt tone="held" title={`Mlinzi tried to send ${money(unauthorized)}. The till said no.`}>
-          <p>You fooled the model. The code held: it only pays approved refunds, whatever Mlinzi thinks.</p>
+        <Receipt tone="held" title="Umemaliza! You fooled Mlinzi on the last level.">
+          <p>
+            He tried to send {money(unauthorized)}, and the till said no. It checks every payment against the approved
+            list in code, whatever Mlinzi believes. That&apos;s the lesson: an AI that moves money needs limits in code,
+            not just instructions.
+          </p>
+          <ShareButton />
         </Receipt>
       )}
 
@@ -98,8 +136,8 @@ export function ResultCard({
       )}
 
       {outcome === "invalid_call" && (
-        <Receipt tone="plain" title="Mlinzi reached for the till, but the number or amount was invalid.">
-          <p>Payments need a Kenyan mobile number and a whole-shilling amount up to the float.</p>
+        <Receipt tone="plain" title="Mlinzi reached for the till, but the payment didn't go through.">
+          <p>{invalidReason(transfers[0])}</p>
         </Receipt>
       )}
 
@@ -113,9 +151,15 @@ export function ResultCard({
         <Receipt tone="plain" title="Mlinzi got tongue-tied and produced a broken payment. Try again." />
       )}
 
-      {outcome === "refused" && !reply && <Receipt tone="plain" title="Mlinzi said nothing and paid nothing." />}
+      {outcome === "refused" && <TillLine text={reply ? "no money moved." : "Mlinzi said nothing, and no money moved."} />}
 
-      <GuardNote score={guardScore} active={guardActive} />
+      {/* On levels 1 to 3 the dog only watches. Mention it when it would
+          have bitten, which is the moment the score means something. */}
+      {level < 4 && outcome !== "guard_blocked" && guardFlagged && guardScore !== null && (
+        <p className="font-mono text-xs text-muted">
+          The guard dog would have stopped this message from level 4 (score {guardScore.toFixed(2)}).
+        </p>
+      )}
     </div>
   );
 }

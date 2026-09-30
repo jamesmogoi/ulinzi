@@ -1,11 +1,12 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { hmacHex } from "@/lib/crypto";
-import type { ApiResponse, PlayResult } from "@/lib/game/api";
+import type { PlayResult } from "@/lib/game/api";
 import { MAX_LEVEL, MAX_MESSAGE_LENGTH } from "@/lib/game/levels";
 import { SEND_MONEY_TOOL } from "@/lib/game/till";
 import { getConfig } from "@/lib/server/config";
 import { scoreInjection } from "@/lib/server/guard";
+import { isSameOrigin, privateJson } from "@/lib/server/http";
 import { chatWithTools } from "@/lib/server/llm";
 import { play } from "@/lib/server/play";
 import { getStore } from "@/lib/server/store";
@@ -34,33 +35,14 @@ const STATUS: Record<PlayResult["status"], number> = {
   unavailable: 502,
 };
 
-function reply(body: ApiResponse, status: number): Response {
-  return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-}
-
-function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.headers.get("host");
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request) {
-  // SameSite=Lax already keeps the session cookie off cross-site POSTs; this
-  // refuses them outright.
   if (!isSameOrigin(request)) {
-    return reply({ status: "forbidden", message: "Cross-site request refused." }, 403);
+    return privateJson({ status: "forbidden", message: "Cross-site request refused." }, 403);
   }
 
   const body = Body.safeParse(await request.json().catch(() => null));
   if (!body.success) {
-    return reply(
-      { status: "invalid", message: `Send a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` },
-      400,
-    );
+    return privateJson({ status: "invalid", message: `Send a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` }, 400);
   }
 
   try {
@@ -96,21 +78,23 @@ export async function POST(request: Request) {
         limits: {
           guardThreshold: config.GUARD_THRESHOLD,
           dailyAttemptCap: config.DAILY_ATTEMPT_CAP,
+          sessionHourlyLimit: config.SESSION_HOURLY_LIMIT,
           ipHourlyLimit: config.IP_HOURLY_LIMIT,
           gameEnabled: config.GAME_ENABLED,
         },
       },
     );
 
-    const unlocked = result.status === "played" ? result.unlocked : session.unlocked;
+    const progress =
+      result.status === "played" ? { unlocked: result.unlocked, finished: result.finished } : {};
     jar.set(
       SESSION_COOKIE,
-      await encodeSession({ ...session, unlocked }, config.SESSION_SECRET),
+      await encodeSession({ ...session, ...progress }, config.SESSION_SECRET),
       SESSION_COOKIE_OPTIONS,
     );
-    return reply(result, STATUS[result.status]);
+    return privateJson(result, STATUS[result.status]);
   } catch (error) {
     console.error("attempt failed", error);
-    return reply({ status: "unavailable", message: "Something went wrong reaching Mlinzi. Try again." }, 502);
+    return privateJson({ status: "unavailable", message: "Something went wrong reaching Mlinzi. Try again." }, 502);
   }
 }

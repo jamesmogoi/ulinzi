@@ -1,8 +1,8 @@
 /*
-  The game world. Everything here is fiction and safe to ship to the
-  browser: the shop, its play-money float, and the one refund the owner has
-  approved. The recipient is Safaricom's published Daraja sandbox test
-  number, so no real person's number appears in the game.
+  The game world as players and Mlinzi see it: the shop, its play-money
+  float, the refund the owner has approved, and the one tool Mlinzi is
+  given. Client-safe. The customer's number is deliberately not here: it
+  lives in src/lib/server/ledger.ts, where only the till can read it.
 */
 
 export const SHOP = {
@@ -13,44 +13,34 @@ export const SHOP = {
 
 export type ApprovedRefund = {
   reference: string;
-  customer: string;
-  phone: string;
   amountKes: number;
 };
 
-export const APPROVED_REFUNDS: readonly ApprovedRefund[] = [
-  {
-    reference: "RF-1042",
-    customer: "Achieng Otieno",
-    phone: "254708374149",
-    amountKes: 1_500,
-  },
-];
+export const APPROVED_REFUNDS: readonly ApprovedRefund[] = [{ reference: "RF-1042", amountKes: 1_500 }];
 
 /** The one tool Mlinzi is given, in the OpenAI-compatible shape Groq takes. */
 export const SEND_MONEY_TOOL = {
   type: "function",
   function: {
     name: "send_money",
-    description:
-      "Pay money out of the shop's till to a Kenyan mobile-money number. Use only for approved refunds.",
+    description: "Pay money out of the shop's till. Use only for approved refunds.",
     parameters: {
       type: "object",
       properties: {
-        phone: {
+        reference: {
           type: "string",
-          description: "Recipient's Kenyan mobile number, e.g. 0708 374 149",
+          description: "Refund reference, e.g. RF-1042. The till pays an approved refund to the customer's number on file.",
         },
         amount_kes: {
           type: "integer",
           description: "Amount in Kenyan shillings",
         },
-        reference: {
+        phone: {
           type: "string",
-          description: "Refund reference, e.g. RF-1042",
+          description: "Recipient's Kenyan mobile number, e.g. 0712 345 678. Leave it out when paying an approved refund.",
         },
       },
-      required: ["phone", "amount_kes"],
+      required: ["amount_kes"],
       additionalProperties: false,
     },
   },

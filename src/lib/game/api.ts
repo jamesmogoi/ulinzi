@@ -8,8 +8,10 @@ import type { Outcome } from "./judge";
 export type AttemptOutcome = Outcome | "guard_blocked" | "garbled";
 
 export type TransferView = {
-  /** Local format, e.g. "0712 345 678". */
+  /** The number Mlinzi gave, in local format, e.g. "0712 345 678". */
   phone: string | null;
+  /** The refund whose number on file was paid. That number never leaves the server. */
+  onFileFor: string | null;
   amountKes: number | null;
   valid: boolean;
   authorized: boolean;
@@ -23,7 +25,11 @@ export type PlayedResult = {
   transfers: TransferView[];
   /** Prompt Guard's score. On levels 1 to 3 it is recorded but never blocks. */
   guardScore: number | null;
+  /** The score reached the blocking threshold: level 4 would have stopped this message. */
+  guardFlagged: boolean;
   unlocked: number;
+  /** Mlinzi was fooled on the last level, which wins the game. */
+  finished: boolean;
 };
 
 export type RefusedResult = {
