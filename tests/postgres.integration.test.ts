@@ -1,6 +1,7 @@
-import { neon } from "@neondatabase/serverless";
-import { afterAll, describe, expect, it } from "vitest";
+import { type NeonQueryFunction, neon } from "@neondatabase/serverless";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { postgresStore } from "@/lib/server/store/postgres";
+import type { Store } from "@/lib/server/store/types";
 
 /*
   Runs only when DATABASE_URL is set:
@@ -14,8 +15,15 @@ const SESSION = "00000000-0000-4000-8000-00000000c1a0";
 const KEY = `test:${crypto.randomUUID()}`;
 
 describe.skipIf(!url)("postgres store", () => {
-  const store = postgresStore(url ?? "");
-  const sql = neon(url ?? "postgres://skip");
+  // Built in beforeAll, not in this body: vitest runs the body of a skipped
+  // describe to collect its tests, and neon() throws without a URL.
+  let store: Store;
+  let sql: NeonQueryFunction<false, false>;
+
+  beforeAll(() => {
+    store = postgresStore(url as string);
+    sql = neon(url as string);
+  });
 
   afterAll(async () => {
     await sql`DELETE FROM attempts WHERE session_id = ${SESSION}`;
